@@ -17,7 +17,7 @@ IP address sent. Returns JSON response containing
 an array of all blocklists the IP address is present in...
 or an empty array if not in any lists.
 
-Amazon RDS - MySQL database configured in MultiAZ for HA.
+Amazon RDS - MySQL database configured in Multi-AZ for HA.
 
 ![CloudFormation Deployment](/images/1.jpg)
 
