@@ -30,12 +30,16 @@ Container's primary job is to get data into RDS.
 Figure 3 - Traffic Flow
 
 Client sends HTTP POST Request
+```
 curl -H "Content-Type: application/json" \
  -d '{"ip": "8.8.8.8"}' \
  -X POST \
  https://id.execute-api.us-west-2.amazonaws.com/ip
+```
 
-Sample Response: {
+Sample Response:
+```
+{
  "ip_lists":[
  "coinbl_hosts.ipset",
  "hphosts_ats.ipset",
@@ -43,6 +47,8 @@ Sample Response: {
  "hphosts_fsa.ipset",
  "hphosts_psh.ipset",
  "packetmail_emerging_ips.ipset"
- ] }
+ ]
+}
+```
 
 ![API Traffic Flow](/images/3.jpg)
