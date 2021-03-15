@@ -1,0 +1,291 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create MySQL RDS, API GW, and Lambda for IP Project"
+
+Parameters:
+  VPC:
+    Type: String
+    Description: The VPC resources will be created in
+    Default: vpc-9d06fef8
+
+  PrivateSubnet01:
+    Type: String
+    Description: The subnets for the db cluster
+    Default: subnet-f97bae9c
+
+  PrivateSubnet02:
+    Type: String
+    Description: The subnets for the db cluster
+    Default: subnet-3a8d8f12
+
+  MasterUsername:
+    Type: String
+    Default: username
+    Description: The database username
+  
+  MasterUserPassword:
+    Type: String
+    Default: password
+    Description: The database password
+    "NoEcho": true
+
+  ParameterGroup:
+    Type: String
+    Default: mysql8
+    Description: The database parameter group to use
+
+  apiGatewayName:
+    Type: String
+    Default: ip-api
+
+  apiGatewayStageName:
+    Type: String
+    AllowedPattern: "[a-z0-9]+"
+    Default: ip
+
+  apiGatewayHTTPMethod:
+    Type: String
+    Default: POST
+
+  lambdaFunctionName:
+    Type: String
+    AllowedPattern: "[a-zA-Z0-9]+[a-zA-Z0-9-]+[a-zA-Z0-9]+"
+    Default: check-for-ip
+
+
+Resources:
+  EC2SecurityGroup:
+      Type: "AWS::EC2::SecurityGroup"
+      Properties:
+          GroupDescription: "database sec group"
+          VpcId: !Ref VPC
+          SecurityGroupIngress: 
+            - 
+              CidrIp: "0.0.0.0/0"
+              FromPort: 3306
+              IpProtocol: "tcp"
+              ToPort: 3306
+          SecurityGroupEgress: 
+            - 
+              CidrIp: "0.0.0.0/0"
+              IpProtocol: "-1"
+
+  RDSDBSubnetGroup:
+      Type: "AWS::RDS::DBSubnetGroup"
+      Properties:
+          DBSubnetGroupDescription: "subnet group for rds mysql db"
+          DBSubnetGroupName: !Sub "${AWS::Region}-aws-ip-database-subnet-group"
+          SubnetIds: 
+            - !Ref PrivateSubnet01
+            - !Ref PrivateSubnet02
+          Tags: 
+            - Key: Name
+              Value: test-db-cluster
+            - Key: createdBy
+              Value: Kevin Wright
+            - Key: Project
+              Value: ip-project
+            - Key: Environment
+              Value: test
+
+  RDSDBInstance:
+      Type: AWS::RDS::DBInstance
+      Properties:
+          DBInstanceIdentifier: aws-ip-database-1
+          AllocatedStorage: 100
+          DBInstanceClass: db.m5.2xlarge
+          Engine: "MYSQL"
+          MasterUsername: !Ref MasterUsername
+          MasterUserPassword: !Ref MasterUserPassword
+          BackupRetentionPeriod: 7
+          MultiAZ: true
+          EngineVersion: 8.0.20
+          AutoMinorVersionUpgrade: true
+          Iops: 1000
+          PubliclyAccessible: true
+          StorageType: io1
+          Port: 3306
+          StorageEncrypted: true
+          CopyTagsToSnapshot: true
+          MonitoringInterval: 60
+          EnableIAMDatabaseAuthentication: false
+          EnablePerformanceInsights: true
+          PerformanceInsightsRetentionPeriod: 7
+          DeletionProtection: false
+          DBSubnetGroupName: !Ref RDSDBSubnetGroup
+          VPCSecurityGroups: 
+            - !Ref EC2SecurityGroup
+          MaxAllocatedStorage: 1000
+          DBParameterGroupName: !Ref ParameterGroup
+          MonitoringRoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/rds-monitoring-role"
+          Tags: 
+            - Key: Name
+              Value: aws-ip-database-1
+            - Key: createdBy
+              Value: Kevin Wright
+            - Key: Project
+              Value: ip-project
+            - Key: Environment
+              Value: test
+
+
+  apiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Description: IP Validator API Gateway
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Name: !Ref apiGatewayName
+
+  apiGatewayRootMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: !Ref apiGatewayHTTPMethod
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations
+          - lambdaArn: !GetAtt lambdaFunction.Arn
+      ResourceId: !GetAtt apiGateway.RootResourceId
+      RestApiId: !Ref apiGateway
+
+  apiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - apiGatewayRootMethod
+    Properties:
+      RestApiId: !Ref apiGateway
+      StageName: !Ref apiGatewayStageName
+
+  lambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import subprocess
+          import sys
+          import ipaddress
+
+          subprocess.call('pip install pymysql -t /tmp/ --no-cache-dir'.split(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+          sys.path.insert(1, '/tmp/')
+
+          import pymysql
+
+          rds_host = os.environ['DB_HOST']
+          name = os.environ['DB_USER']
+          password = os.environ['DB_PASS']
+          db_name = "ip_project"
+          port = 3306
+          try:
+              conn = pymysql.connect(host=rds_host,user=name,
+                                     passwd=password,db=db_name,
+                                     connect_timeout=5,
+                                     cursorclass=pymysql.cursors.DictCursor)
+          except:
+              sys.exit()
+
+          def lambda_handler(event, context):
+              results = []
+
+              ip = json.loads(event['body'])['ip']
+
+              dec_ip = int(ipaddress.ip_address(ip))
+
+              with conn.cursor() as cur:
+                  qry = "SELECT name FROM ip_project.addresses where address = '{}';".format(ip)
+                  cur.execute(qry)
+                  for result in cur.fetchall():
+                      results.append(result['name'])
+
+              with conn.cursor() as cur:
+
+                  qry = "SELECT name FROM ip_project.networks WHERE {} between nw_start and nw_end;".format(dec_ip)
+                  cur.execute(qry)
+                  for result in cur.fetchall():
+                      results.append(result['name'])
+
+              return {
+                  'statusCode': 200,
+                  'headers': {
+                      'Content-Type': 'application/json'
+                  },
+                  'body': json.dumps({'ip_lists': results})
+              }
+
+
+      Environment:
+        Variables:
+          DB_HOST: !GetAtt 'RDSDBInstance.Endpoint.Address'
+          DB_USER: !Ref MasterUsername
+          DB_PASS: !Ref MasterUserPassword
+      Description: IP Validator Lambda
+      FunctionName: !Ref lambdaFunctionName
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Role: !GetAtt lambdaIAMRole.Arn
+      Runtime: python3.8
+
+  lambdaApiGatewayInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt lambdaFunction.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGateway}/${apiGatewayStageName}/${apiGatewayHTTPMethod}/
+
+  lambdaIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+      Policies:
+        - PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Effect: Allow
+                Resource:
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${lambdaFunctionName}:*
+          PolicyName: lambda
+
+  lambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${lambdaFunctionName}
+      RetentionInDays: 90
+
+
+Outputs:
+  Cluster:
+    Description: The DB Cluster Name
+    Value: !Ref RDSDBInstance
+
+  RDSEndpoint:
+    Description: The DB Endpoint
+    Value: !GetAtt 'RDSDBInstance.Endpoint.Address'
+    
+  SubnetGroup:
+    Description: The db subnet group name 
+    Value: !Ref RDSDBSubnetGroup
+
+  apiGatewayInvokeURL:
+    Value: !Sub https://${apiGateway}.execute-api.${AWS::Region}.amazonaws.com/${apiGatewayStageName}
+
+  lambdaArn:
+    Value: !GetAtt lambdaFunction.Arn
+
+
