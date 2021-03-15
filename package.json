@@ -1,0 +1,22 @@
+{
+  "name": "environment",
+  "version": "1.0.0",
+  "description": "",
+  "main": "process.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^14.14.33",
+    "mysql2-promise": "^0.1.4",
+    "node-ipv4": "^1.1.2"
+  },
+  "dependencies": {
+    "@types/node": "^14.14.33",
+    "mysql2-promise": "^0.1.4",
+    "node-ipv4": "^1.1.2"
+  }
+}

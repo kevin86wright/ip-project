@@ -1,0 +1,16 @@
+{
+"compilerOptions": {
+    "baseUrl": ".",
+    "declaration": false,
+    "emitDecoratorMetadata": false,
+    "experimentalDecorators": false,
+    "forceConsistentCasingInFileNames": true,
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "noEmit": false,
+    "noImplicitReturns": false,
+    "noUnusedLocals": false,
+    "strict": false,
+    "target": "es6"
+  }
+}

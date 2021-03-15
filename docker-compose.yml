@@ -1,0 +1,8 @@
+version: "3"
+services: 
+  ipdata:
+    container_name: ipdata
+    build: 
+      context: .
+      dockerfile: ./Dockerfile
+    image: ipdata
