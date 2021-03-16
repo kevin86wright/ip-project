@@ -169,45 +169,51 @@ Resources:
           import subprocess
           import sys
           import ipaddress
-
+          
           subprocess.call('pip install pymysql -t /tmp/ --no-cache-dir'.split(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
           sys.path.insert(1, '/tmp/')
-
+          
           import pymysql
-
+          
           rds_host = os.environ['DB_HOST']
           name = os.environ['DB_USER']
           password = os.environ['DB_PASS']
           db_name = "ip_project"
           port = 3306
-          try:
-              conn = pymysql.connect(host=rds_host,user=name,
-                                     passwd=password,db=db_name,
-                                     connect_timeout=5,
-                                     cursorclass=pymysql.cursors.DictCursor)
-          except:
-              sys.exit()
-
+          
           def lambda_handler(event, context):
+          
+              try:
+                  conn = pymysql.connect(host=rds_host,user=name,
+                                         passwd=password,db=db_name,
+                                         connect_timeout=5,
+                                         cursorclass=pymysql.cursors.DictCursor)
+              except:
+                  sys.exit()
+          
               results = []
-
+          
               ip = json.loads(event['body'])['ip']
-
+          
               dec_ip = int(ipaddress.ip_address(ip))
-
-              with conn.cursor() as cur:
-                  qry = "SELECT name FROM ip_project.addresses where address = '{}';".format(ip)
-                  cur.execute(qry)
-                  for result in cur.fetchall():
-                      results.append(result['name'])
-
-              with conn.cursor() as cur:
-
-                  qry = "SELECT name FROM ip_project.networks WHERE {} between nw_start and nw_end;".format(dec_ip)
-                  cur.execute(qry)
-                  for result in cur.fetchall():
-                      results.append(result['name'])
-
+          
+              cur = conn.cursor()
+              qry = "SELECT name FROM ip_project.addresses where address = '{}';".format(ip)
+              cur.execute(qry)
+              for result in cur.fetchall():
+                  results.append(result['name'])
+              cur.close()
+          
+          
+              cur = conn.cursor()
+              qry = "SELECT name FROM ip_project.networks WHERE {} between nw_start and nw_end;".format(dec_ip)
+              cur.execute(qry)
+              for result in cur.fetchall():
+                  results.append(result['name'])
+              cur.close()
+          
+              conn.close()
+          
               return {
                   'statusCode': 200,
                   'headers': {
